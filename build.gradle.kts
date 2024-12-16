@@ -1,9 +1,15 @@
 plugins {
     id("java")
+    id("maven-publish") // Make sure you include this if you need to publish the artifact
 }
 
 group = "wklm.aoc"
-version = "1.0-SNAPSHOT"
+version = "0.0.1"
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
 
 repositories {
     mavenCentral()
@@ -16,4 +22,15 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        register("mavenJava", MavenPublication::class) {
+            from(components["java"])
+            groupId = project.group.toString()
+            artifactId = project.name
+            version = project.version.toString()
+        }
+    }
 }
