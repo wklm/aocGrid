@@ -7,8 +7,8 @@ group = "wklm.aoc"
 version = "0.0.2"   
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_23
+    targetCompatibility = JavaVersion.VERSION_23
 }
 
 repositories {
