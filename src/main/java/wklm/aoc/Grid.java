@@ -596,4 +596,427 @@ public final class Grid<T> {
             return Double.compare(this.cost, other.cost);
         }
     }
+
+    // ==================== AOC-OPTIMIZED METHODS ====================
+
+    /**
+     * Gets the neighbor in a specific direction (optimized for AOC direction-based navigation).
+     *
+     * @param point     The starting point
+     * @param direction The direction to move
+     * @return Optional containing the neighbor point, or empty if out of bounds
+     */
+    public Optional<Point<T>> getNeighbor(Point<T> point, wklm.aoc.Direction direction) {
+        if (point == null) return Optional.empty();
+        int newRow = point.x() + direction.dx();
+        int newCol = point.y() + direction.dy();
+        return get(newRow, newCol);
+    }
+
+    /**
+     * BFS pathfinding - finds shortest path using breadth-first search.
+     * Optimized for AOC - faster than Dijkstra for unweighted grids.
+     *
+     * @param startRow     Starting row
+     * @param startCol     Starting column
+     * @param endRow       Ending row
+     * @param endCol       Ending column
+     * @param connectivity Connectivity type (FOUR or EIGHT)
+     * @param canMove      Predicate to determine if movement to a point is allowed
+     * @return Optional containing the path, or empty if no path exists
+     */
+    public Optional<List<Point<T>>> findPathBFS(
+            int startRow, int startCol, int endRow, int endCol,
+            Connectivity connectivity, java.util.function.Predicate<Point<T>> canMove) {
+
+        return get(startRow, startCol)
+            .flatMap(start -> get(endRow, endCol)
+                .flatMap(end -> bfsPath(start, end, connectivity, canMove)));
+    }
+
+    /**
+     * BFS implementation for pathfinding.
+     */
+    private Optional<List<Point<T>>> bfsPath(
+            Point<T> start, Point<T> end, Connectivity connectivity,
+            java.util.function.Predicate<Point<T>> canMove) {
+
+        var queue = new ArrayDeque<Point<T>>();
+        var visited = new HashSet<Point<T>>();
+        var predecessors = new HashMap<Point<T>, Point<T>>();
+
+        queue.offer(start);
+        visited.add(start);
+
+        while (!queue.isEmpty()) {
+            var current = queue.poll();
+
+            if (current.equals(end)) {
+                return Optional.of(reconstructPath(predecessors, end));
+            }
+
+            behavior.getNeighbors(current, this, connectivity).stream()
+                .filter(canMove)
+                .filter(visited::add)
+                .forEach(neighbor -> {
+                    predecessors.put(neighbor, current);
+                    queue.offer(neighbor);
+                });
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * A* pathfinding - finds shortest path using A* algorithm with Manhattan distance heuristic.
+     * Optimized for AOC - much faster than Dijkstra for large grids.
+     *
+     * @param startRow         Starting row
+     * @param startCol         Starting column
+     * @param endRow           Ending row
+     * @param endCol           Ending column
+     * @param connectivity     Connectivity type (FOUR or EIGHT)
+     * @param movementCostFunc Optional movement cost function (null for uniform cost)
+     * @return Optional containing the path, or empty if no path exists
+     */
+    public Optional<List<Point<T>>> findPathAStar(
+            int startRow, int startCol, int endRow, int endCol,
+            Connectivity connectivity, MovementCostFunction<T> movementCostFunc) {
+
+        return get(startRow, startCol)
+            .flatMap(start -> get(endRow, endCol)
+                .flatMap(end -> astar(start, end, connectivity, movementCostFunc)));
+    }
+
+    /**
+     * A* algorithm implementation with Manhattan distance heuristic.
+     */
+    private Optional<List<Point<T>>> astar(
+            Point<T> start, Point<T> end, Connectivity connectivity,
+            MovementCostFunction<T> movementCostFunc) {
+
+        var openSet = new PriorityQueue<AStarNode<T>>();
+        var gScores = new HashMap<Point<T>, Double>();
+        var predecessors = new HashMap<Point<T>, Point<T>>();
+        var visited = new HashSet<Point<T>>();
+
+        double startH = manhattanDistance(start, end);
+        openSet.offer(new AStarNode<>(start, 0.0, startH));
+        gScores.put(start, 0.0);
+
+        while (!openSet.isEmpty()) {
+            var current = openSet.poll();
+
+            if (!visited.add(current.point)) {
+                continue;
+            }
+
+            if (current.point.equals(end)) {
+                return Optional.of(reconstructPath(predecessors, end));
+            }
+
+            double currentG = gScores.get(current.point);
+
+            behavior.getNeighbors(current.point, this, connectivity).stream()
+                .filter(java.util.function.Predicate.not(visited::contains))
+                .forEach(neighbor -> {
+                    double moveCost = Optional.ofNullable(movementCostFunc)
+                        .map(func -> func.calculate(current.point, neighbor))
+                        .orElse(1.0);
+
+                    double tentativeG = currentG + moveCost;
+
+                    if (tentativeG < gScores.getOrDefault(neighbor, Double.MAX_VALUE)) {
+                        predecessors.put(neighbor, current.point);
+                        gScores.put(neighbor, tentativeG);
+                        double h = manhattanDistance(neighbor, end);
+                        openSet.offer(new AStarNode<>(neighbor, tentativeG, h));
+                    }
+                });
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * A* node with f-score = g-score + heuristic.
+     */
+    private record AStarNode<T>(Point<T> point, double gScore, double hScore)
+            implements Comparable<AStarNode<T>> {
+        double fScore() {
+            return gScore + hScore;
+        }
+
+        @Override
+        public int compareTo(AStarNode<T> other) {
+            return Double.compare(this.fScore(), other.fScore());
+        }
+    }
+
+    /**
+     * Calculates Manhattan distance between two points (L1 distance).
+     * Primary distance metric for grid navigation in AOC.
+     *
+     * @param p1 First point
+     * @param p2 Second point
+     * @return Manhattan distance
+     */
+    public static <T> double manhattanDistance(Point<T> p1, Point<T> p2) {
+        return Math.abs(p1.x() - p2.x()) + Math.abs(p1.y() - p2.y());
+    }
+
+    /**
+     * Calculates Euclidean distance between two points (L2 distance).
+     *
+     * @param p1 First point
+     * @param p2 Second point
+     * @return Euclidean distance
+     */
+    public static <T> double euclideanDistance(Point<T> p1, Point<T> p2) {
+        int dx = p1.x() - p2.x();
+        int dy = p1.y() - p2.y();
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    /**
+     * Rotates the grid 90 degrees clockwise.
+     * Optimized for AOC grid rotation puzzles.
+     */
+    public Grid<T> rotate90Clockwise() {
+        var newDims = new Dimensions(dimensions.ncols(), dimensions.nrows());
+
+        var rotatedRows = IntStream.range(0, newDims.nrows())
+            .mapToObj(i -> IntStream.range(0, newDims.ncols())
+                .mapToObj(j -> {
+                    // (i, j) in rotated = (nrows - 1 - j, i) in original
+                    var original = rows.get(dimensions.nrows() - 1 - j).get(i);
+                    return new Point<>(i, j, original.value());
+                })
+                .collect(Collectors.toUnmodifiableList()))
+            .toList();
+
+        var rotatedLocations = rotatedRows.stream()
+            .flatMap(Collection::stream)
+            .filter(p -> p.value() != null)
+            .collect(Collectors.groupingBy(
+                Point::value,
+                Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList)
+            ));
+
+        return new Grid<>(rotatedRows, Collections.unmodifiableMap(rotatedLocations),
+                         newDims, this.behavior);
+    }
+
+    /**
+     * Rotates the grid 90 degrees counter-clockwise.
+     */
+    public Grid<T> rotate90CounterClockwise() {
+        var newDims = new Dimensions(dimensions.ncols(), dimensions.nrows());
+
+        var rotatedRows = IntStream.range(0, newDims.nrows())
+            .mapToObj(i -> IntStream.range(0, newDims.ncols())
+                .mapToObj(j -> {
+                    // (i, j) in rotated = (j, ncols - 1 - i) in original
+                    var original = rows.get(j).get(dimensions.ncols() - 1 - i);
+                    return new Point<>(i, j, original.value());
+                })
+                .collect(Collectors.toUnmodifiableList()))
+            .toList();
+
+        var rotatedLocations = rotatedRows.stream()
+            .flatMap(Collection::stream)
+            .filter(p -> p.value() != null)
+            .collect(Collectors.groupingBy(
+                Point::value,
+                Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList)
+            ));
+
+        return new Grid<>(rotatedRows, Collections.unmodifiableMap(rotatedLocations),
+                         newDims, this.behavior);
+    }
+
+    /**
+     * Flips the grid horizontally (mirror across vertical axis).
+     */
+    public Grid<T> flipHorizontal() {
+        var flippedRows = IntStream.range(0, dimensions.nrows())
+            .mapToObj(i -> IntStream.range(0, dimensions.ncols())
+                .mapToObj(j -> {
+                    var original = rows.get(i).get(dimensions.ncols() - 1 - j);
+                    return new Point<>(i, j, original.value());
+                })
+                .collect(Collectors.toUnmodifiableList()))
+            .toList();
+
+        var flippedLocations = flippedRows.stream()
+            .flatMap(Collection::stream)
+            .filter(p -> p.value() != null)
+            .collect(Collectors.groupingBy(
+                Point::value,
+                Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList)
+            ));
+
+        return new Grid<>(flippedRows, Collections.unmodifiableMap(flippedLocations),
+                         dimensions, this.behavior);
+    }
+
+    /**
+     * Flips the grid vertically (mirror across horizontal axis).
+     */
+    public Grid<T> flipVertical() {
+        var flippedRows = IntStream.range(0, dimensions.nrows())
+            .mapToObj(i -> IntStream.range(0, dimensions.ncols())
+                .mapToObj(j -> {
+                    var original = rows.get(dimensions.nrows() - 1 - i).get(j);
+                    return new Point<>(i, j, original.value());
+                })
+                .collect(Collectors.toUnmodifiableList()))
+            .toList();
+
+        var flippedLocations = flippedRows.stream()
+            .flatMap(Collection::stream)
+            .filter(p -> p.value() != null)
+            .collect(Collectors.groupingBy(
+                Point::value,
+                Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList)
+            ));
+
+        return new Grid<>(flippedRows, Collections.unmodifiableMap(flippedLocations),
+                         dimensions, this.behavior);
+    }
+
+    /**
+     * Counts points matching a predicate - optimized for AOC counting problems.
+     *
+     * @param predicate Condition to check
+     * @return Count of matching points
+     */
+    public long count(java.util.function.Predicate<Point<T>> predicate) {
+        return rows.stream()
+            .flatMap(Collection::stream)
+            .filter(predicate)
+            .count();
+    }
+
+    /**
+     * Finds first point matching a predicate - optimized for AOC search problems.
+     *
+     * @param predicate Condition to check
+     * @return Optional containing first matching point
+     */
+    public Optional<Point<T>> findFirst(java.util.function.Predicate<Point<T>> predicate) {
+        return rows.stream()
+            .flatMap(Collection::stream)
+            .filter(predicate)
+            .findFirst();
+    }
+
+    /**
+     * Applies an action to each point in the grid - optimized for AOC iteration.
+     *
+     * @param action Action to perform on each point
+     */
+    public void forEach(java.util.function.Consumer<Point<T>> action) {
+        rows.stream()
+            .flatMap(Collection::stream)
+            .forEach(action);
+    }
+
+    /**
+     * Returns a stream of all points for functional composition - enables parallel processing.
+     *
+     * @return Stream of all points
+     */
+    public Stream<Point<T>> stream() {
+        return rows.stream().flatMap(Collection::stream);
+    }
+
+    /**
+     * Returns a parallel stream of all points - optimized for large grid operations in AOC.
+     *
+     * @return Parallel stream of all points
+     */
+    public Stream<Point<T>> parallelStream() {
+        return rows.parallelStream().flatMap(Collection::stream);
+    }
+
+    /**
+     * Extracts a rectangular subgrid - useful for AOC region problems.
+     *
+     * @param startRow Starting row (inclusive)
+     * @param startCol Starting column (inclusive)
+     * @param endRow   Ending row (exclusive)
+     * @param endCol   Ending column (exclusive)
+     * @return Optional containing the subgrid, or empty if bounds are invalid
+     */
+    public Optional<Grid<T>> subGrid(int startRow, int startCol, int endRow, int endCol) {
+        if (startRow < 0 || startCol < 0 || endRow > dimensions.nrows() ||
+            endCol > dimensions.ncols() || startRow >= endRow || startCol >= endCol) {
+            return Optional.empty();
+        }
+
+        int newNrows = endRow - startRow;
+        int newNcols = endCol - startCol;
+
+        var subRows = IntStream.range(0, newNrows)
+            .mapToObj(i -> IntStream.range(0, newNcols)
+                .mapToObj(j -> {
+                    var original = rows.get(startRow + i).get(startCol + j);
+                    return new Point<>(i, j, original.value());
+                })
+                .collect(Collectors.toUnmodifiableList()))
+            .toList();
+
+        var subLocations = subRows.stream()
+            .flatMap(Collection::stream)
+            .filter(p -> p.value() != null)
+            .collect(Collectors.groupingBy(
+                Point::value,
+                Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList)
+            ));
+
+        return Optional.of(new Grid<>(subRows, Collections.unmodifiableMap(subLocations),
+                                     new Dimensions(newNrows, newNcols), this.behavior));
+    }
+
+    /**
+     * Detects if a grid contains a cycle starting from a point - useful for AOC cycle detection.
+     * Uses Floyd's cycle detection algorithm.
+     *
+     * @param start        Starting point
+     * @param connectivity Connectivity type
+     * @param next         Function to determine next point
+     * @return Optional containing cycle length if found
+     */
+    public Optional<Integer> detectCycle(
+            Point<T> start, Connectivity connectivity,
+            java.util.function.Function<Point<T>, Optional<Point<T>>> next) {
+
+        var slow = start;
+        var fast = start;
+
+        // Floyd's algorithm: slow moves 1 step, fast moves 2 steps
+        while (true) {
+            var slowNext = next.apply(slow);
+            if (slowNext.isEmpty()) return Optional.empty();
+            slow = slowNext.get();
+
+            var fastNext1 = next.apply(fast);
+            if (fastNext1.isEmpty()) return Optional.empty();
+            var fastNext2 = next.apply(fastNext1.get());
+            if (fastNext2.isEmpty()) return Optional.empty();
+            fast = fastNext2.get();
+
+            if (slow.equals(fast)) {
+                // Cycle detected, find cycle length
+                int cycleLength = 1;
+                fast = next.apply(slow).get();
+                while (!slow.equals(fast)) {
+                    fast = next.apply(fast).get();
+                    cycleLength++;
+                }
+                return Optional.of(cycleLength);
+            }
+        }
+    }
 }

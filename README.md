@@ -125,6 +125,144 @@ List<Point<Character>> neighbors4 = grid.getNeighbors(point, Connectivity.FOUR);
 List<Point<Character>> neighbors8 = grid.getNeighbors(point, Connectivity.EIGHT);
 ```
 
+## AOC-Optimized Features
+
+Based on analysis of Advent of Code 2024 puzzles, this library includes highly optimized methods for the most common AOC patterns.
+
+### Direction-Based Navigation
+
+```java
+import wklm.aoc.Direction;
+
+// Direction enum with rotation support (Day 6, 16 patterns)
+Direction dir = Direction.NORTH;
+dir = dir.turnRight();  // Now EAST
+dir = dir.turnLeft();   // Back to NORTH
+dir = dir.reverse();    // SOUTH
+
+// Get neighbor in a specific direction
+Point<Character> current = grid.get(5, 5).get();
+Optional<Point<Character>> next = grid.getNeighbor(current, Direction.NORTH);
+
+// Parse direction from input
+Direction parsed = Direction.fromSymbol('^');  // NORTH
+Direction parsed2 = Direction.fromSymbol('E'); // EAST
+```
+
+### BFS Pathfinding (Day 10, 18)
+
+```java
+// BFS - fastest for unweighted grids (most AOC puzzles)
+Optional<List<Point<Character>>> path = grid.findPathBFS(
+    0, 0,           // Start position
+    9, 9,           // End position
+    Connectivity.FOUR,
+    p -> p.value() != '#'  // Can move if not a wall
+);
+
+if (path.isPresent()) {
+    System.out.println("Path length: " + path.get().size());
+}
+```
+
+### A* Pathfinding (Day 16, 20)
+
+```java
+// A* with Manhattan heuristic - much faster than Dijkstra for large grids
+Optional<List<Point<Integer>>> path = grid.findPathAStar(
+    0, 0,           // Start
+    99, 99,         // End
+    Connectivity.FOUR,
+    null  // null = uniform cost, or provide custom cost function
+);
+
+// With custom movement costs (Day 16 rotation costs)
+Optional<List<Point<Character>>> pathWithCost = grid.findPathAStar(
+    0, 0, 99, 99,
+    Connectivity.FOUR,
+    (from, to) -> to.value() == '#' ? 1000.0 : 1.0  // Expensive walls
+);
+```
+
+### Manhattan Distance (Day 20)
+
+```java
+// Primary distance metric for grid problems
+Point<Integer> p1 = grid.get(0, 0).get();
+Point<Integer> p2 = grid.get(5, 7).get();
+
+double dist = Grid.manhattanDistance(p1, p2);  // 12 (5 + 7)
+```
+
+### Grid Rotation and Flipping (Day 15)
+
+```java
+// Rotate 90 degrees clockwise
+Grid<Character> rotated = grid.rotate90Clockwise();
+
+// Rotate counter-clockwise
+Grid<Character> rotatedCCW = grid.rotate90CounterClockwise();
+
+// Flip horizontally or vertically
+Grid<Character> flippedH = grid.flipHorizontal();
+Grid<Character> flippedV = grid.flipVertical();
+
+// Transpose (already existed)
+Grid<Character> transposed = grid.transpose();
+```
+
+### Fast Iteration and Counting
+
+```java
+// Count matching points
+long wallCount = grid.count(p -> p.value() == '#');
+
+// Find first matching point
+Optional<Point<Character>> start = grid.findFirst(p -> p.value() == 'S');
+
+// Iterate over all points
+grid.forEach(point -> {
+    if (point.value() == 'E') {
+        System.out.println("Found end at: " + point.x() + "," + point.y());
+    }
+});
+
+// Stream API for complex operations
+long emptySpaces = grid.stream()
+    .filter(p -> p.value() == '.')
+    .count();
+
+// Parallel processing for large grids
+grid.parallelStream()
+    .filter(p -> p.value() != '#')
+    .forEach(this::processPoint);
+```
+
+### Cycle Detection (Day 14)
+
+```java
+// Floyd's cycle detection for position loops
+Optional<Integer> cycleLength = grid.detectCycle(
+    startPoint,
+    Connectivity.FOUR,
+    current -> grid.getNeighbor(current, direction)  // Next state function
+);
+
+if (cycleLength.isPresent()) {
+    System.out.println("Cycle detected with length: " + cycleLength.get());
+}
+```
+
+### Subgrid Extraction
+
+```java
+// Extract a rectangular region
+Optional<Grid<Character>> region = grid.subGrid(
+    10, 10,  // Start row, col
+    20, 20   // End row, col (exclusive)
+);
+```
+
 ## Advanced Features
 
 ### Toroidal Grids (Wrap-Around)
@@ -511,6 +649,33 @@ grid.find(value)
 
 ### Version 0.0.3 (Development)
 
+**AOC-Optimized Features (Based on AOC 2024 Analysis):**
+- **Direction Enum**: Cardinal directions with rotation (turnLeft, turnRight, reverse)
+  - Used in Day 6 (guard movement), Day 16 (maze with rotation costs)
+  - Parse from symbols: '^', 'v', '<', '>', 'N', 'S', 'E', 'W'
+- **BFS Pathfinding**: Optimized breadth-first search for unweighted grids
+  - Faster than Dijkstra for most AOC puzzles (Day 10, 18)
+  - Supports movement predicates for walls/obstacles
+- **A* Pathfinding**: A* algorithm with Manhattan heuristic
+  - Much faster than Dijkstra for large grids (Day 16, 20)
+  - Optimal for weighted pathfinding with distance heuristic
+- **Manhattan Distance**: Static method for L1 distance calculation
+  - Primary distance metric in AOC (Day 20: cheating range calculation)
+- **Grid Rotation**: rotate90Clockwise(), rotate90CounterClockwise()
+  - Common in pattern matching and orientation problems (Day 15)
+- **Grid Flipping**: flipHorizontal(), flipVertical()
+  - Useful for mirror/reflection puzzles
+- **Fast Iteration**: count(), findFirst(), forEach()
+  - Optimized for common AOC counting and search patterns
+- **Stream API**: stream(), parallelStream()
+  - Enable functional composition and parallel processing for large grids
+- **Subgrid Extraction**: Extract rectangular regions
+  - Useful for region-based problems
+- **Cycle Detection**: Floyd's algorithm for detecting position loops
+  - Essential for Day 14-style problems with repeating patterns
+- **Direction-Based Navigation**: getNeighbor(point, direction)
+  - Direct movement in cardinal directions
+
 **Functional Programming Refactor:**
 - Refactored entire codebase to use functional programming paradigm
 - Replaced imperative loops with streams and functional composition
@@ -527,6 +692,7 @@ grid.find(value)
 - Stream operations enable lazy evaluation
 - Better pipeline optimization by JVM
 - Reduced intermediate object creation
+- Parallel stream support for large grid operations
 
 ### Version 0.0.2
 
