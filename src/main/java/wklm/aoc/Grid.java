@@ -41,7 +41,7 @@ public final class Grid<T> {
      * Internal interface for grid behaviors.
      */
     private interface Behavior<T> {
-        List<Point<T>> getNeighbors(Point<T> point, Grid<T> grid, int connectivity);
+        List<Point<T>> getNeighbors(Point<T> point, Grid<T> grid, Connectivity connectivity);
     }
 
     /**
@@ -51,7 +51,7 @@ public final class Grid<T> {
      */
     private static final class StandardBehavior<T> implements Behavior<T> {
         @Override
-        public List<Point<T>> getNeighbors(Point<T> point, Grid<T> grid, int connectivity) {
+        public List<Point<T>> getNeighbors(Point<T> point, Grid<T> grid, Connectivity connectivity) {
             return getNeighborsInternal(point, grid, connectivity, false);
         }
     }
@@ -63,17 +63,16 @@ public final class Grid<T> {
      */
     private static final class ToroidalBehavior<T> implements Behavior<T> {
         @Override
-        public List<Point<T>> getNeighbors(Point<T> point, Grid<T> grid, int connectivity) {
+        public List<Point<T>> getNeighbors(Point<T> point, Grid<T> grid, Connectivity connectivity) {
             return getNeighborsInternal(point, grid, connectivity, true);
         }
     }
 
     // Shared neighbor retrieval logic
-    private static <T> List<Point<T>> getNeighborsInternal(Point<T> point, Grid<T> grid, int connectivity, boolean toroidal) {
+    private static <T> List<Point<T>> getNeighborsInternal(Point<T> point, Grid<T> grid, Connectivity connectivity, boolean toroidal) {
         final int[][] directions = switch (connectivity) {
-            case 4 -> FOUR_DIRECTIONS;
-            case 8 -> EIGHT_DIRECTIONS;
-            default -> throw new IllegalArgumentException("Unsupported connectivity: " + connectivity);
+            case FOUR -> FOUR_DIRECTIONS;
+            case EIGHT -> EIGHT_DIRECTIONS;
         };
 
         List<Point<T>> neighbors = new ArrayList<>();
@@ -114,30 +113,76 @@ public final class Grid<T> {
      * @param dimensions   Dimensions of the grid.
      * @param defaultValue Default value for empty points.
      * @param bt           Behavior type (STANDARD or TOROIDAL).
+     * @throws NullPointerException if points or dimensions is null.
      */
     public Grid(List<Point<T>> points, Dimensions dimensions, Optional<T> defaultValue, Optional<BehaviorType> bt) {
+        Objects.requireNonNull(points, "Points list cannot be null.");
+        Objects.requireNonNull(dimensions, "Dimensions cannot be null.");
+        Objects.requireNonNull(defaultValue, "Default value Optional cannot be null.");
+        Objects.requireNonNull(bt, "Behavior type Optional cannot be null.");
+
         this.behavior = bt.<Behavior<T>>map(behaviorType -> switch (behaviorType) {
             case STANDARD -> new StandardBehavior<>();
             case TOROIDAL -> new ToroidalBehavior<>();
         }).orElseGet(StandardBehavior::new);
 
         this.dimensions = dimensions;
-        this.locations = new HashMap<>();
-        this.rows = new ArrayList<>(dimensions.nrows());
+
+        // Initialize grid with default values
+        List<List<Point<T>>> tmpRows = new ArrayList<>(dimensions.nrows());
+        Map<T, List<Point<T>>> tmpLocations = new HashMap<>();
+        T defaultVal = defaultValue.orElse(null);
+
         for (int i = 0; i < dimensions.nrows(); i++) {
-            rows.add(new ArrayList<>(dimensions.ncols()));
-            for(int j = 0; j < dimensions.ncols(); j++) {
-                this.rows.get(i).set(j, new Point<>(i, j, defaultValue.orElse(null)));
+            List<Point<T>> row = new ArrayList<>(dimensions.ncols());
+            for (int j = 0; j < dimensions.ncols(); j++) {
+                Point<T> defaultPoint = new Point<>(i, j, defaultVal);
+                row.add(defaultPoint);
+                if (defaultVal != null) {
+                    tmpLocations.computeIfAbsent(defaultVal, k -> new ArrayList<>()).add(defaultPoint);
+                }
+            }
+            tmpRows.add(row);
+        }
+
+        // Override with provided points
+        for (Point<T> point : points) {
+            if (point.x() < 0 || point.x() >= dimensions.nrows() ||
+                point.y() < 0 || point.y() >= dimensions.ncols()) {
+                throw new IllegalArgumentException(
+                    String.format("Point (%d,%d) is out of bounds for dimensions %dx%d",
+                        point.x(), point.y(), dimensions.nrows(), dimensions.ncols()));
+            }
+
+            // Remove old point from locations if it had a value
+            Point<T> oldPoint = tmpRows.get(point.x()).get(point.y());
+            if (oldPoint.value() != null) {
+                List<Point<T>> oldList = tmpLocations.get(oldPoint.value());
+                if (oldList != null) {
+                    oldList.remove(oldPoint);
+                    if (oldList.isEmpty()) {
+                        tmpLocations.remove(oldPoint.value());
+                    }
+                }
+            }
+
+            // Set new point
+            tmpRows.get(point.x()).set(point.y(), point);
+            if (point.value() != null) {
+                tmpLocations.computeIfAbsent(point.value(), k -> new ArrayList<>()).add(point);
             }
         }
 
-        for(var point : points) {
-            this.rows.get(point.x()).set(point.y(), point);
-            this.locations.computeIfAbsent(point.value(), _ -> new ArrayList<>()).add(point);
+        // Make immutable
+        this.rows = tmpRows.stream()
+            .map(Collections::unmodifiableList)
+            .toList();
+        this.locations = tmpLocations.entrySet().stream()
+            .collect(Collectors.toUnmodifiableMap(
+                Map.Entry::getKey,
+                e -> Collections.unmodifiableList(e.getValue())
+            ));
     }
-
-
-}
 
 
 /**
@@ -174,7 +219,7 @@ public static <T> Optional<Grid<T>> fromString(String input, CharacterParser<T> 
             Point<T> p = new Point<>(i, j, val);
             row.add(p);
             if (val != null) {
-                tmpLocations.computeIfAbsent(val, _ -> new ArrayList<>()).add(p);
+                tmpLocations.computeIfAbsent(val, k -> new ArrayList<>()).add(p);
             }
         }
         tmpRows.add(Collections.unmodifiableList(row));
@@ -212,6 +257,33 @@ public static <T> Optional<Grid<T>> fromToroidalString(String input, CharacterPa
 }
 
 /**
+ * Gets the dimensions of this grid.
+ *
+ * @return The dimensions (nrows x ncols).
+ */
+public Dimensions getDimensions() {
+    return dimensions;
+}
+
+/**
+ * Gets the number of rows in this grid.
+ *
+ * @return Number of rows.
+ */
+public int getRows() {
+    return dimensions.nrows();
+}
+
+/**
+ * Gets the number of columns in this grid.
+ *
+ * @return Number of columns.
+ */
+public int getCols() {
+    return dimensions.ncols();
+}
+
+/**
  * Retrieves the point at the specified row and column.
  *
  * @param row Row index.
@@ -240,15 +312,14 @@ public Optional<List<Point<T>>> find(T value) {
  * Retrieves the neighbors of a given point based on connectivity.
  *
  * @param point        Point whose neighbors are to be found.
- * @param connectivity 4 or 8 for directional connectivity.
- * @return Optional containing the list of neighboring points, or empty if point is null.
+ * @param connectivity Connectivity type (FOUR or EIGHT).
+ * @return List of neighboring points, empty list if point is invalid.
  */
-public Optional<List<Point<T>>> getNeighbors(Point<T> point, int connectivity) {
+public List<Point<T>> getNeighbors(Point<T> point, Connectivity connectivity) {
     if (point == null) {
-        return Optional.empty();
+        return List.of();
     }
-    List<Point<T>> neighbors = behavior.getNeighbors(point, this, connectivity);
-    return Optional.of(neighbors);
+    return behavior.getNeighbors(point, this, connectivity);
 }
 
 /**
@@ -264,14 +335,16 @@ public List<T> getUniqueValues() {
  * Retrieves all connected points with the specified target value.
  *
  * @param targetValue  Value to find connected components for.
- * @param connectivity 4 or 8 for directional connectivity.
- * @return Optional containing the list of connected point lists, or empty if none found.
+ * @param connectivity Connectivity type (FOUR or EIGHT).
+ * @return List of connected point lists, empty list if none found.
  */
-public Optional<List<List<Point<T>>>> getConnectedPoints(T targetValue, int connectivity) {
+public List<List<Point<T>>> getConnectedPoints(T targetValue, Connectivity connectivity) {
     Objects.requireNonNull(targetValue, "Target value cannot be null.");
+    Objects.requireNonNull(connectivity, "Connectivity cannot be null.");
+
     List<Point<T>> startingPoints = locations.get(targetValue);
     if (startingPoints == null || startingPoints.isEmpty()) {
-        return Optional.empty();
+        return List.of();
     }
 
     Set<Point<T>> visited = new HashSet<>();
@@ -284,7 +357,7 @@ public Optional<List<List<Point<T>>>> getConnectedPoints(T targetValue, int conn
         }
     }
 
-    return connectedComponents.isEmpty() ? Optional.empty() : Optional.of(connectedComponents);
+    return Collections.unmodifiableList(connectedComponents);
 }
 
 /**
@@ -292,11 +365,11 @@ public Optional<List<List<Point<T>>>> getConnectedPoints(T targetValue, int conn
  *
  * @param start        Starting point.
  * @param targetValue  Value to search for.
- * @param connectivity 4 or 8 for directional connectivity.
+ * @param connectivity Connectivity type (FOUR or EIGHT).
  * @param visited      Set to track visited points.
  * @return List of connected points.
  */
-private List<Point<T>> bfs(Point<T> start, T targetValue, int connectivity, Set<Point<T>> visited) {
+private List<Point<T>> bfs(Point<T> start, T targetValue, Connectivity connectivity, Set<Point<T>> visited) {
     List<Point<T>> component = new ArrayList<>();
     Queue<Point<T>> queue = new ArrayDeque<>();
     queue.offer(start);
@@ -334,14 +407,13 @@ public Grid<T> transpose() {
             Point<T> transposedPoint = new Point<>(i, j, original.value());
             newRow.add(transposedPoint);
             if (original.value() != null) {
-                transposedLocations.computeIfAbsent(original.value(), _ -> new ArrayList<>()).add(transposedPoint);
+                transposedLocations.computeIfAbsent(original.value(), k -> new ArrayList<>()).add(transposedPoint);
             }
         }
         transposedRows.add(Collections.unmodifiableList(newRow));
     }
 
     Dimensions newDims = new Dimensions(newNrows, newNcols);
-    Behavior<T> newBehavior = this.behavior instanceof ToroidalBehavior ? new ToroidalBehavior<>() : new StandardBehavior<>();
 
     // Convert locations to unmodifiable map of unmodifiable lists
     Map<T, List<Point<T>>> unmodifiableLocations = transposedLocations.entrySet().stream()
@@ -350,7 +422,7 @@ public Grid<T> transpose() {
                     e -> Collections.unmodifiableList(e.getValue())
             ));
 
-    return new Grid<>(Collections.unmodifiableList(transposedRows), unmodifiableLocations, newDims, newBehavior);
+    return new Grid<>(Collections.unmodifiableList(transposedRows), unmodifiableLocations, newDims, this.behavior);
 }
 
 /**
@@ -380,7 +452,7 @@ public Optional<Grid<T>> union(Grid<T> other, BiFunction<T, T, T> merger) {
             Point<T> mergedPoint = new Point<>(i, j, mergedValue);
             combinedRow.add(mergedPoint);
             if (mergedValue != null) {
-                combinedLocations.computeIfAbsent(mergedValue, _ -> new ArrayList<>()).add(mergedPoint);
+                combinedLocations.computeIfAbsent(mergedValue, k -> new ArrayList<>()).add(mergedPoint);
             }
         }
         combinedRows.add(Collections.unmodifiableList(combinedRow));
@@ -403,7 +475,7 @@ public Optional<Grid<T>> union(Grid<T> other, BiFunction<T, T, T> merger) {
  * @param startCol         Starting point's column index.
  * @param endRow           Ending point's row index.
  * @param endCol           Ending point's column index.
- * @param connectivity     4 or 8 for directional connectivity.
+ * @param connectivity     Connectivity type (FOUR or EIGHT).
  * @param movementCostFunc Optional movement cost function. If null, uniform cost is assumed.
  * @return Optional containing the list of points representing the shortest path,
  * or empty if no path exists or indices are invalid.
@@ -413,9 +485,11 @@ public Optional<List<Point<T>>> findShortestPathDijkstra(
         int startCol,
         int endRow,
         int endCol,
-        int connectivity,
+        Connectivity connectivity,
         MovementCostFunction<T> movementCostFunc
 ) {
+    Objects.requireNonNull(connectivity, "Connectivity cannot be null.");
+
     Optional<Point<T>> startOpt = get(startRow, startCol);
     Optional<Point<T>> endOpt = get(endRow, endCol);
 
@@ -476,7 +550,7 @@ public Optional<List<Point<T>>> findShortestPathDijkstra(
  * @param startCol     Starting point's column index.
  * @param endRow       Ending point's row index.
  * @param endCol       Ending point's column index.
- * @param connectivity 4 or 8 for directional connectivity.
+ * @param connectivity Connectivity type (FOUR or EIGHT).
  * @return Optional containing the list of points representing the shortest path,
  * or empty if no path exists or indices are invalid.
  */
@@ -485,7 +559,7 @@ public Optional<List<Point<T>>> findShortestPathDijkstra(
         int startCol,
         int endRow,
         int endCol,
-        int connectivity
+        Connectivity connectivity
 ) {
     return findShortestPathDijkstra(startRow, startCol, endRow, endCol, connectivity, null);
 }
@@ -560,12 +634,14 @@ public String toGridString(boolean includeIndices) {
 /**
  * Provides a beautifully formatted graph string representation (Adjacency List).
  *
- * @param connectivity     4 or 8 for directional connectivity.
+ * @param connectivity     Connectivity type (FOUR or EIGHT).
  * @param includeWeights   Whether to include movement costs (if applicable).
  * @param movementCostFunc Optional movement cost function. If provided, weights will be calculated.
  * @return String representation of the graph.
  */
-public String toGraphString(int connectivity, boolean includeWeights, MovementCostFunction<T> movementCostFunc) {
+public String toGraphString(Connectivity connectivity, boolean includeWeights, MovementCostFunction<T> movementCostFunc) {
+    Objects.requireNonNull(connectivity, "Connectivity cannot be null.");
+
     StringBuilder sb = new StringBuilder();
     sb.append("Graph Representation (Adjacency List):\n");
 
