@@ -1,18 +1,20 @@
 # Grid Library for Advent of Code
 
-A high-performance, type-safe Java library for grid-based algorithmic problems, specifically designed for [Advent of Code](https://adventofcode.com/) challenges.
+A high-performance, type-safe Java library for grid-based algorithmic problems, specifically designed for [Advent of Code](https://adventofcode.com/) challenges. Built with modern Java features and functional programming paradigm.
 
 [![](https://jitpack.io/v/wklm/aocGrid.svg)](https://jitpack.io/#wklm/aocGrid)
 
 ## Features
 
+- **Functional Programming First** - Built with streams, Optional, and functional composition
+- **Modern Java** - Uses Java 21+ features (sealed interfaces, records, pattern matching, var)
 - **Immutable Grid Data Structure** - Thread-safe and prevents accidental mutations
 - **Generic Type Support** - Works with any type `T`
 - **Multiple Grid Behaviors** - Standard and Toroidal (wrap-around) grids
 - **Pathfinding Algorithms** - Built-in Dijkstra's algorithm with custom cost functions
 - **Connected Components** - BFS-based component detection
-- **Flexible Connectivity** - 4-directional and 8-directional neighbor support
-- **Rich API** - Query, transform, and visualize grids easily
+- **Flexible Connectivity** - Type-safe enum for 4 and 8-directional neighbors
+- **Rich API** - Query, transform, and visualize grids with functional methods
 - **Zero Dependencies** - Pure Java implementation
 
 ## Installation
@@ -460,9 +462,73 @@ Using `Connectivity` enum instead of magic numbers (4/8):
 - IDE autocomplete support
 - Easier to extend in the future
 
+## Modern Java Features
+
+This library embraces modern Java programming:
+
+### Functional Programming
+- **Streams Everywhere**: All operations use streams for lazy evaluation and composability
+- **Method References**: Prefer `Objects::nonNull` and `Predicate.not(List::isEmpty)`
+- **Optional Chaining**: Safe null handling with `Optional.ofNullable().filter().map()`
+- **Immutable Collections**: Uses `List.of()`, `toList()`, and `Collections.unmodifiable*()`
+
+### Modern Language Features
+- **Sealed Interfaces**: `Behavior` interface is sealed for exhaustive type safety
+- **Records**: `Point`, `Dimensions`, `Direction`, and `DijkstraNode` are records
+- **Pattern Matching**: Switch expressions with pattern matching
+- **Local Variable Type Inference**: Uses `var` for cleaner code
+- **Text Blocks**: Multi-line strings with `"""`
+
+### Examples of Functional Style
+
+```java
+// Functional neighbor retrieval with streams
+List<Point<Character>> neighbors = grid.getNeighbors(point, Connectivity.FOUR);
+
+// Stream-based path reconstruction
+List<Point<T>> path = Stream.iterate(end, Objects::nonNull, predecessors::get)
+    .collect(Collectors.toList());
+
+// Functional grid creation with IntStream
+var rows = IntStream.range(0, nrows)
+    .mapToObj(i -> IntStream.range(0, ncols)
+        .mapToObj(j -> new Point<>(i, j, parser.parse(input.charAt(j))))
+        .toList())
+    .toList();
+
+// Optional chaining for safe operations
+return get(row, col)
+    .flatMap(start -> get(endRow, endCol)
+        .flatMap(end -> dijkstra(start, end, connectivity, costFunc)));
+
+// Method reference for filtering
+grid.find(value)
+    .filter(Predicate.not(List::isEmpty))
+    .ifPresent(this::processPoints);
+```
+
 ## Changelog
 
-### Version 0.0.2 (Current)
+### Version 0.0.3 (Development)
+
+**Functional Programming Refactor:**
+- Refactored entire codebase to use functional programming paradigm
+- Replaced imperative loops with streams and functional composition
+- Converted `Behavior` to sealed interface for exhaustive type safety
+- Introduced `Direction` record for type-safe direction vectors
+- Replaced traditional loops with `IntStream.range()` and `Stream` operations
+- Path reconstruction now uses `Stream.iterate()`
+- Neighbor retrieval uses streams with `filter()` and method references
+- All construction methods use functional pipelines
+- BFS/DFS operations use functional filtering with method references
+- Dijkstra implementation uses Optional chaining for null safety
+
+**Performance Improvements:**
+- Stream operations enable lazy evaluation
+- Better pipeline optimization by JVM
+- Reduced intermediate object creation
+
+### Version 0.0.2
 
 **Bug Fixes:**
 - Fixed critical `IndexOutOfBoundsException` in Grid constructor
